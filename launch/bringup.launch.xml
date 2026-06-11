@@ -23,12 +23,12 @@
     <!-- decoder: /dual_fisheye/image（非圧縮）を配信。
          skip_frame=1 で半分だけ配信等。i_frame_only=true は最小CPU(約1-2FPS) -->
     
-    <!-- <node pkg="insta360_ros_driver" exec="decoder" name="image_decoder" output="log">
+    <node pkg="insta360_ros_driver" exec="decoder" name="image_decoder" output="log">
         <param name="compressed_topic" value="/dual_fisheye/image/compressed"/>
         <param name="uncompressed_topic" value="/dual_fisheye/image"/>
         <param name="skip_frame" value="0"/>
         <param name="i_frame_only" value="false"/>
-    </node> -->
+    </node>
 
     <!-- equirectangular: /equirectangular/image を配信 -->
     <!--

@@ -1,5 +1,34 @@
 # insta360_ros_driver
 
+> ## 🔧 amsl による追記・改変について
+> 本リポジトリは、オープンソースの [ai4ce/insta360_ros_driver](https://github.com/ai4ce/insta360_ros_driver) を
+> **amsl (amslabtech)** がフォークし、機能追加・改変したものです。**元の ai4ce の機能はすべて残しています。**
+>
+> ### amsl が追加した機能
+> - **統合ノード `insta360_all_node`**：カメラを **1回だけ開き**、以下の **3トピックを同時配信**します。
+>   - `/dual_fisheye/image/compressed`（生のデュアル魚眼 H.264）
+>   - `/imu/data_raw`
+>   - **`/insta360/panorama/compressed`**（リアルタイム・パノラマ、JPEG）
+> - パノラマは Insta360 **MediaSDK の `RealTimeStitcher`**（`DYNAMICSTITCH` + FlowState）で生成。
+>   SDK 付属デモ `realtime_stitcher_demo.cc` と**同じ方法をそのまま使用**しています。
+> - **撮影時刻スタンプ**（`use_sdk_timestamp`）：`header.stamp` をカメラの**撮影時刻**にするため、
+>   パノラマのステッチ／エンコードに遅延があっても、rosbag 内で IMU と画像の時刻がズレません。
+> - `bringup.launch.xml` は**既定で統合ノードのみ**を起動します。
+>   `decoder` / `equirectangular` / `imu_filter` は**コメントアウト**してあり、外せば従来どおり
+>   `/dual_fisheye/image`・`/equirectangular/image`・`/imu/data` も得られます。
+>   （※ カメラを自前で開くノードは、統合ノードと**同時起動するとカメラ競合で失敗**します）
+> - 設定は **`config/panorama.yaml`**（出力解像度・stitch 種別・crop・publish_fps・live_resolution・撮影時刻スタンプ等）。
+>
+> ### SDK の導入（amsl 改変版で必要）
+> 本パッケージは **CameraSDK に加えて MediaSDK も必要**です（パノラマ生成に使用）。
+> - **CameraSDK**：`camera` / `stream` ヘッダを `include/` に、`libCameraSDK.so` を `lib/` に配置。
+> - **MediaSDK**：`libMediaSDK-dev-*.deb` を Insta360 SDK から入手してシステム導入
+>   （`/usr/lib/libMediaSDK.so`・`/usr/include/ins_*.h` が入る）。
+> - **SDK バイナリはリポジトリに含めません**（`.gitignore` 済）。**各自でダウンロードして配置**してください。
+>
+> ---
+> 以下は元の ai4ce のドキュメント（英語）です。
+
 A ROS driver for the Insta360 cameras. This driver is tested on Ubuntu 22.04 with ROS2 Humble. The driver has also been verified on the Insta360 X2 and X3 cameras. The following resolutions are available, all at 30 FPS.
 - 3840 x 1920
 - 2560 x 1280
@@ -23,15 +52,6 @@ cd ..
 Then, the Insta360 libraries need to be installed as follows:
 - add the <code>camera</code> and <code>stream</code> header files inside the <code>include</code> directory
 - add the <code>libCameraSDK.so</code> library under the <code>lib</code> directory.
-
-#### MediaSDK (required for the panorama topic)
-The integrated panorama topic (`/insta360/panorama/compressed`) is produced with the Insta360 **MediaSDK**
-realtime stitcher, so MediaSDK must also be installed in addition to CameraSDK above.
-- Obtain MediaSDK (`libMediaSDK-dev-*.deb`) from the Insta360 SDK and install it
-  (this provides `/usr/lib/libMediaSDK.so` and the `/usr/include/ins_*.h` headers).
-
-> **Note:** SDK binaries are NOT included in this repository (they are git-ignored — see `.gitignore`).
-> You must download the SDK yourself and place CameraSDK into `lib/` + `include/` as above, and install MediaSDK system-wide.
 
 Afterwards, install the other required dependencies and build
 ```
@@ -80,30 +100,11 @@ A dual fisheye image will be published.
 ![dual_fisheye](docs/dual_fisheye.png)
 
 #### Published Topics
-By default, `bringup.launch.xml` runs a single integrated node and publishes **only these three topics**:
-- /dual_fisheye/image/compressed  (raw H.264 dual fisheye)
+- /dual_fisheye/image
+- /dual_fisheye/image/compressed
+- /equirectangular/image
+- /imu/data
 - /imu/data_raw
-- /insta360/panorama/compressed   (MediaSDK panorama, JPEG)
-
-The decoder / equirectangular / imu_filter nodes are **commented out** in `bringup.launch.xml`.
-Uncomment them to also get `/dual_fisheye/image`, `/equirectangular/image`, `/imu/data`.
-(Note: any node that opens the camera itself — e.g. the old `insta360_ros_driver` raw driver — must NOT be
-run together with the integrated node, as the camera can only be opened by one process.)
-
-## Panorama Stitching
-`/insta360/panorama/compressed` is generated using the Insta360 **MediaSDK `RealTimeStitcher`**
-(`DYNAMICSTITCH` + FlowState), the same stitching method as the SDK's `realtime_stitcher_demo.cc`,
-used as-is. The integrated node opens the camera once and, in a single `StreamDelegate`, both publishes
-the raw H.264 / IMU and feeds the frames to the MediaSDK stitcher.
-
-Parameters are configured in `config/panorama.yaml`:
-- `output_width` / `output_height` — panorama (equirectangular) output size
-- `stitch_type` — `template` | `optflow` | `dynamic`
-- `crop_top` / `crop_bottom` — crop the top/bottom of the panorama
-- `jpeg_quality`, `publish_fps`
-- `live_resolution` — camera input resolution (shared by all topics)
-- `use_sdk_timestamp` — stamp messages with the SDK capture time instead of publish time
-  (so panorama processing latency does not misalign image vs IMU in a rosbag)
 
 The launch file has the following optional arguments:
 - equirectangular (default="false")
