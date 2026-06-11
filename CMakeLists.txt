@@ -8,6 +8,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(camera_info_manager REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(image_transport REQUIRED)
@@ -69,6 +70,26 @@ ament_target_dependencies(decoder
 target_link_libraries(decoder CameraSDK  ${OpenCV_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVFORMAT_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES})
 
 install(TARGETS decoder
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# Integrated panorama node (raw H.264 + IMU + MediaSDK panorama, single camera open)
+add_executable(insta360_all_node src/insta360_all_node.cpp)
+ament_target_dependencies(insta360_all_node
+  rclcpp
+  sensor_msgs
+  std_msgs
+  camera_info_manager
+  cv_bridge
+  image_transport
+  OpenCV
+)
+# JPEGシンボル衝突回避: libMediaSDK が jpeg_CreateCompress 等を export しているため、
+# システム libjpeg を MediaSDK より先にロードして OpenCV の imencode が正しい jpeg を使うようにする。
+target_link_libraries(insta360_all_node
+  -Wl,--no-as-needed jpeg -Wl,--as-needed
+  CameraSDK MediaSDK ${OpenCV_LIBRARIES})
+install(TARGETS insta360_all_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

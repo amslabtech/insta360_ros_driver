@@ -1,0 +1,22 @@
+insta360_node:
+  ros__parameters:
+    # --- パノラマ出力（MediaSDK stitcher）---
+    output_width: 1280          # スティッチ出力幅 (SetOutputSize)
+    output_height: 640          # スティッチ出力高さ (SetOutputSize、2:1推奨)
+    stitch_type: "dynamic"      # "template" | "optflow" | "dynamic"
+    crop_top: 0                 # 上から切り取るピクセル数
+    crop_bottom: 0              # 下から切り取るピクセル数
+    jpeg_quality: 90            # JPEG品質 1-100
+    publish_fps: 5.0           # panoramaトピックの出力fps
+
+    # --- トピック / フレーム ---
+    panorama_topic: "/insta360/panorama/compressed"
+    panorama_frame_id: "insta360"
+
+    # --- カメラ入力（raw/IMU/stitch 共通の1ストリーム）---
+    # 3840x1920 | 2560x1280 | 1920x960 | 1440x720（いずれも30fps）
+    live_resolution: "1920x960"
+
+    # --- タイムスタンプ（撮影時刻でstamp。後段IMU×画像のbag整合用）---
+    use_sdk_timestamp: true     # false で従来の now()（配信時刻）に戻せる
+    timestamp_unit: "ms"        # SDKタイムスタンプの単位（実測: 30fps映像で連続差≈33 → ミリ秒）

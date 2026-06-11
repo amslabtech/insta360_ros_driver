@@ -1,8 +1,13 @@
 bag/*
 image_capture/*
+
+# Insta360 SDK (手動配置・非追跡 / not tracked, place manually)
+#   CameraSDK: libCameraSDK.so -> lib/, camera/stream ヘッダ -> include/
+#   MediaSDK : .deb をシステム導入 (/usr/lib, /usr/include) のためrepoには置かない
 lib/*
 include/camera/*
 include/stream/*
+
 .vscode
 *.pyc
 build
