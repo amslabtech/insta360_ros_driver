@@ -347,8 +347,8 @@ class EquirectangularNode(Node):
             front_img_full = dual_fisheye_img[:, midpoint:]
             back_img_full = dual_fisheye_img[:, :midpoint]
 
-            front_img_full = cv2.rotate(front_img_full, cv2.ROTATE_90_COUNTERCLOCKWISE)
-            back_img_full = cv2.rotate(back_img_full, cv2.ROTATE_90_CLOCKWISE)
+            # front_img_full = cv2.rotate(front_img_full, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            # back_img_full = cv2.rotate(back_img_full, cv2.ROTATE_90_CLOCKWISE)
             
             # Store original uncropped images (always update in calibration mode)
             if self.calibration_mode or self.original_front_img is None or self.original_front_img.shape != front_img_full.shape:

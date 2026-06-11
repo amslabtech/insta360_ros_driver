@@ -9,7 +9,9 @@ EquirectangularNode::EquirectangularNode()
       maps_initialized_(false),
       params_changed_(true),
       img_height_(0),
-      img_width_(0)
+      img_width_(0),
+      crop_y_min_(0),
+      crop_y_max_(0)
 {
     // Declare parameters
     declare_parameter("cx_offset", 0.0);
@@ -20,6 +22,7 @@ EquirectangularNode::EquirectangularNode()
     declare_parameter("gpu", true);
     declare_parameter("out_width", 1920);
     declare_parameter("out_height", 960);
+    declare_parameter("crop_y", std::vector<int64_t>{});
     
     // Load parameters
     loadParameters();
@@ -41,9 +44,16 @@ EquirectangularNode::EquirectangularNode()
     dual_fisheye_sub_ = create_subscription<sensor_msgs::msg::Image>(
         "/dual_fisheye/image", qos,
         std::bind(&EquirectangularNode::imageCallback, this, std::placeholders::_1));
+
+    dual_fisheye_jpeg_pub_ = create_publisher<sensor_msgs::msg::CompressedImage>(
+	"/dual_fisheye/image/jpeg/compressed", qos);
+
     
     equirect_pub_ = create_publisher<sensor_msgs::msg::Image>(
         "/equirectangular/image", qos);
+        
+    equirect_compressed_pub_ = create_publisher<sensor_msgs::msg::CompressedImage>(
+        "/equirectangular/image/compressed", qos);
 }
 
 EquirectangularNode::~EquirectangularNode()
@@ -59,6 +69,29 @@ void EquirectangularNode::loadParameters()
         out_width_ = get_parameter("out_width").as_int();
         out_height_ = get_parameter("out_height").as_int();
         gpu_enabled_ = get_parameter("gpu").as_bool();
+        
+        std::vector<int64_t> crop_y;
+        try {
+            crop_y = get_parameter("crop_y").as_integer_array();
+        } catch (...) {
+            crop_y = {};
+        }
+
+        if (crop_y.size() == 2) {
+            crop_y_min_ = static_cast<int>(crop_y[0]);
+            crop_y_max_ = static_cast<int>(crop_y[1]);
+        } else {
+            crop_y_min_ = 0;
+            crop_y_max_ = out_height_;
+        }
+
+        // Validate crop range
+        if (crop_y_min_ < 0) crop_y_min_ = 0;
+        if (crop_y_max_ > out_height_) crop_y_max_ = out_height_;
+        if (crop_y_min_ >= crop_y_max_) {
+             crop_y_min_ = 0;
+             crop_y_max_ = out_height_;
+        }
         
         auto translation = get_parameter("translation").as_double_array();
         tx_ = translation[0];
@@ -77,6 +110,9 @@ void EquirectangularNode::loadParameters()
         RCLCPP_INFO(get_logger(), "  Rotation (deg): [%.1f, %.1f, %.1f]", 
                     rotation_deg[0], rotation_deg[1], rotation_deg[2]);
         RCLCPP_INFO(get_logger(), "  Output size: %dx%d", out_width_, out_height_);
+        if (crop_y_min_ != 0 || crop_y_max_ != out_height_) {
+            RCLCPP_INFO(get_logger(), "  Crop Y: [%d, %d]", crop_y_min_, crop_y_max_);
+        }
         RCLCPP_INFO(get_logger(), "  GPU enabled: %s", gpu_enabled_ ? "true" : "false");
     } catch (const std::exception& e) {
         RCLCPP_ERROR(get_logger(), "Error loading parameters: %s", e.what());
@@ -276,8 +312,8 @@ void EquirectangularNode::imageCallback(const sensor_msgs::msg::Image::SharedPtr
         cv::Mat front_img_full = dual_fisheye_img(cv::Rect(midpoint, 0, midpoint, img_height));
         cv::Mat back_img_full = dual_fisheye_img(cv::Rect(0, 0, midpoint, img_height));
         
-        cv::rotate(front_img_full, front_img_full, cv::ROTATE_90_COUNTERCLOCKWISE);
-        cv::rotate(back_img_full, back_img_full, cv::ROTATE_90_CLOCKWISE);
+        // cv::rotate(front_img_full, front_img_full, cv::ROTATE_90_COUNTERCLOCKWISE);
+        // cv::rotate(back_img_full, back_img_full, cv::ROTATE_90_CLOCKWISE);
         
         
         // Crop images based on crop_size parameter
@@ -315,12 +351,56 @@ void EquirectangularNode::imageCallback(const sensor_msgs::msg::Image::SharedPtr
         auto start_time = now();
         cv::Mat equirect_img = createEquirectangular(front_img, back_img);
         
+        // Crop output if configured
+        if (crop_y_min_ > 0 || crop_y_max_ < equirect_img.rows) {
+            int h = equirect_img.rows;
+            int w = equirect_img.cols;
+            
+            // Ensure valid crop range
+            int y_min = std::max(0, crop_y_min_);
+            int y_max = std::min(h, crop_y_max_);
+            
+            if (y_max > y_min) {
+                cv::Rect crop_rect(0, y_min, w, y_max - y_min);
+                equirect_img = equirect_img(crop_rect);
+            }
+        }
+
+	// dual_fisheye をJPEGで publish（購読者がいる時だけ）
+	if (dual_fisheye_jpeg_pub_->get_subscription_count() > 0) {
+            std::vector<uchar> buf;
+	    cv::Mat bgr_img;
+	    cv::cvtColor(dual_fisheye_img, bgr_img, cv::COLOR_RGB2BGR);
+	    if (cv::imencode(".jpg", bgr_img, buf)) {
+		sensor_msgs::msg::CompressedImage msg;
+		msg.header = dual_fisheye_msg->header;
+		msg.format = "jpeg";
+		msg.data = std::move(buf);
+		dual_fisheye_jpeg_pub_->publish(msg);
+	    }
+	}
+
+        
         // Publish result
         cv_bridge::CvImage out_msg;
         out_msg.header = dual_fisheye_msg->header;
         out_msg.encoding = "rgb8";
         out_msg.image = equirect_img;
         equirect_pub_->publish(*out_msg.toImageMsg());
+        
+        // Publish compressed result
+        if (equirect_compressed_pub_->get_subscription_count() > 0) {
+            std::vector<uchar> buf;
+            cv::Mat bgr_img;
+            cv::cvtColor(equirect_img, bgr_img, cv::COLOR_RGB2BGR);
+            if (cv::imencode(".jpg", bgr_img, buf)) {
+                sensor_msgs::msg::CompressedImage compressed_msg;
+                compressed_msg.header = dual_fisheye_msg->header;
+                compressed_msg.format = "jpeg";
+                compressed_msg.data = buf;
+                equirect_compressed_pub_->publish(compressed_msg);
+            }
+        }
         
         auto process_time = (now() - start_time).seconds();
         RCLCPP_DEBUG(get_logger(), "Processing time: %.3f seconds", process_time);
@@ -345,6 +425,7 @@ rcl_interfaces::msg::SetParametersResult EquirectangularNode::parametersCallback
             param.get_name() == "rotation_deg" ||
             param.get_name() == "out_width" ||
             param.get_name() == "out_height" ||
+            param.get_name() == "crop_y" ||
             param.get_name() == "gpu") {
             update_needed = true;
         }

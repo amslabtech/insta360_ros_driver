@@ -3,6 +3,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/msg/compressed_image.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
 #include <memory>
@@ -31,6 +32,8 @@ private:
     // ROS2 communication
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr dual_fisheye_sub_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr equirect_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr equirect_compressed_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr dual_fisheye_jpeg_pub_;
     
     // Parameters
     double cx_offset_;
@@ -41,6 +44,8 @@ private:
     bool gpu_enabled_;
     int out_width_;
     int out_height_;
+    int crop_y_min_;
+    int crop_y_max_;
     
     // Camera parameters
     double cx_, cy_;
