@@ -10,6 +10,7 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>ament_cmake_python</buildtool_depend>
 
+  <build_depend>rclcpp</build_depend>
   <build_depend>camera_info_manager</build_depend>
   <build_depend>cv_bridge</build_depend>
   <build_depend>image_transport</build_depend>
@@ -28,8 +29,13 @@
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>std_srvs</exec_depend>
+  <exec_depend>rclcpp</exec_depend>
 
   <depend>imu_tools</depend>
+  <!-- insta360_all_node の JPEG エンコード (OpenCV を使えないため libjpeg 直叩き) -->
+  <depend>libjpeg</depend>
+  <!-- decoder の H.264/H.265 デコード (libavcodec/libavutil/libswscale) -->
+  <depend>ffmpeg</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

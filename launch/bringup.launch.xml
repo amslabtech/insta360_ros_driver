@@ -5,8 +5,9 @@
     <arg name="equirectangular_config" default="$(find-pkg-share insta360_ros_driver)/config/equirectangular.yaml"/>
     <arg name="imu_config" default="$(find-pkg-share insta360_ros_driver)/config/imu_filter.yaml"/>
 
-    <!-- 統合ノード: カメラを1回だけ開き、raw H.264 + IMU + MediaSDKパノラマ を同時配信。
-         Topics: /dual_fisheye/image/compressed, /imu/data_raw, /insta360/panorama/compressed
+    <!-- 統合ノード: カメラを1回だけ開き、raw H.264/H.265 + IMU + MediaSDKパノラマ を同時配信。
+         Topics: /dual_fisheye/image/compressed, /imu/data_raw_insta360, /insta360/panorama/compressed
+         （/imu/data_raw は all.launch.py の Xsens が使うため衝突させない）
          設定は config/panorama.yaml -->
     <node pkg="insta360_ros_driver" exec="insta360_all_node" name="insta360_node" output="screen">
         <param from="$(find-pkg-share insta360_ros_driver)/config/panorama.yaml"/>
@@ -21,6 +22,7 @@
     -->
 
     <!-- decoder: /dual_fisheye/image（非圧縮）を配信。
+         codec は受信した format("h264"/"h265")から自動判定する。
          skip_frame=1 で半分だけ配信等。i_frame_only=true は最小CPU(約1-2FPS) -->
     
     <node pkg="insta360_ros_driver" exec="decoder" name="image_decoder" output="log">

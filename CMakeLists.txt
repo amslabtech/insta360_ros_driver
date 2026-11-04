@@ -31,10 +31,38 @@ include_directories(
   ${SWSCALE_INCLUDE_DIRS}
 )
 
-link_directories(
-  ${PROJECT_SOURCE_DIR}/lib
-  ${PROJECT_SOURCE_DIR}/include
-)
+# ---------------------------------------------------------------------------
+# Insta360 SDK
+#   CameraSDK 2.1.8 : 本パッケージ同梱 (include/camera, include/stream, lib/)
+#   MediaSDK  3.1.5 : deb でシステム導入 (/opt/MediaSDK-3.1.5-linux/)
+#                     ヘッダのみ include/media/ に同梱
+#
+# 旧 MediaSDK 3.1.1 (libmediasdk-dev) がシステムに残っていても問題ない:
+#   ヘッダ … /usr/include は -I パスではなく常に最後に探索されるため include/media が必ず勝つ
+#   ライブラリ … 絶対パスでリンクし、RPATH で /opt 側を先に見せる
+# ---------------------------------------------------------------------------
+set(CAMERA_SDK_LIB "${PROJECT_SOURCE_DIR}/lib/libCameraSDK.so")
+if(NOT EXISTS "${CAMERA_SDK_LIB}")
+  message(FATAL_ERROR "CameraSDK が見つかりません: ${CAMERA_SDK_LIB}\n"
+                      "  CameraSDK 2.1.8 の libCameraSDK.so を lib/ に、"
+                      "camera/stream ヘッダを include/ に配置してください (README 参照)")
+endif()
+
+set(MEDIA_SDK_DIR "/opt/MediaSDK-3.1.5-linux" CACHE PATH "MediaSDK 3.1.5 install prefix")
+if(NOT EXISTS "${MEDIA_SDK_DIR}/lib/libMediaSDK.so")
+  message(FATAL_ERROR "MediaSDK が見つかりません: ${MEDIA_SDK_DIR}/lib/libMediaSDK.so\n"
+                      "  MediaSDK-3.1.5-linux-amd64.deb を dpkg -i で導入してください")
+endif()
+
+# libMediaSDK.so は jpeg_* を多数グローバルに export しているため、libjpeg を MediaSDK より
+# 先に DT_NEEDED へ登録してシンボル解決順で勝たせる (負けると本ノードの jpeg_* 呼び出しが
+# MediaSDK 内蔵のコーデックへ飛ぶ)。
+find_library(SYS_JPEG NAMES jpeg PATHS /usr/lib/x86_64-linux-gnu NO_DEFAULT_PATH REQUIRED)
+
+# RPATH の順序が重要: ${MEDIA_SDK_DIR}/lib にも別ビルドの libCameraSDK.so (20MB) があるため、
+# 同梱版 (17MB) を必ず先に置く。colcon --symlink-install ではバイナリ実体が build/ 以下に
+# 置かれるため $ORIGIN は使えず、絶対パスで焼き込む。
+set(INSTA360_RPATH "${PROJECT_SOURCE_DIR}/lib;${MEDIA_SDK_DIR}/lib")
 
 install(
   DIRECTORY config launch lib
@@ -51,7 +79,10 @@ ament_target_dependencies(${PROJECT_NAME}
   std_srvs
   OpenCV
 )
-target_link_libraries(${PROJECT_NAME} CameraSDK  ${OpenCV_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVFORMAT_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} ${CAMERA_SDK_LIB}  ${OpenCV_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVFORMAT_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES})
+set_target_properties(${PROJECT_NAME} PROPERTIES
+  INSTALL_RPATH "${INSTA360_RPATH}"
+  BUILD_WITH_INSTALL_RPATH TRUE)
 
 install(TARGETS ${PROJECT_NAME}
   DESTINATION lib/${PROJECT_NAME}
@@ -67,28 +98,35 @@ ament_target_dependencies(decoder
   std_srvs
   OpenCV
 )
-target_link_libraries(decoder CameraSDK  ${OpenCV_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVFORMAT_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES})
+# decoder は Insta360 SDK の API を一切使わない (ffmpeg でデコードするだけ) ので CameraSDK はリンクしない。
+# MediaSDK もリンクしないため、こちらは OpenCV/cv_bridge を安全に使える。
+target_link_libraries(decoder ${OpenCV_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVFORMAT_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES})
 
 install(TARGETS decoder
   DESTINATION lib/${PROJECT_NAME}
 )
 
-# Integrated panorama node (raw H.264 + IMU + MediaSDK panorama, single camera open)
+# Integrated node (raw H.264/H.265 + IMU + MediaSDK panorama, single camera open)
+#
+# OpenCV は意図的にリンクしない。${MEDIA_SDK_DIR}/lib/libopencv_world.so.407 (2.2GB) が
+# 同梱されており、システム OpenCV を同じプロセスに入れると main() 到達前に SIGSEGV する。
+# そのため JPEG エンコードは cv::imencode ではなく libjpeg 直叩き (RGBA -> JPEG) で行う。
 add_executable(insta360_all_node src/insta360_all_node.cpp)
 ament_target_dependencies(insta360_all_node
   rclcpp
   sensor_msgs
-  std_msgs
-  camera_info_manager
-  cv_bridge
-  image_transport
-  OpenCV
 )
-# JPEGシンボル衝突回避: libMediaSDK が jpeg_CreateCompress 等を export しているため、
-# システム libjpeg を MediaSDK より先にロードして OpenCV の imencode が正しい jpeg を使うようにする。
+# 同梱SDKのヘッダを、システムに残っている旧 /usr/include/ins_*.h より先に見せる。
+target_include_directories(insta360_all_node BEFORE PRIVATE
+  ${PROJECT_SOURCE_DIR}/include
+  ${PROJECT_SOURCE_DIR}/include/media)
 target_link_libraries(insta360_all_node
-  -Wl,--no-as-needed jpeg -Wl,--as-needed
-  CameraSDK MediaSDK ${OpenCV_LIBRARIES})
+  -Wl,--no-as-needed ${SYS_JPEG} -Wl,--as-needed
+  ${CAMERA_SDK_LIB}
+  ${MEDIA_SDK_DIR}/lib/libMediaSDK.so)
+set_target_properties(insta360_all_node PROPERTIES
+  INSTALL_RPATH "${INSTA360_RPATH}"
+  BUILD_WITH_INSTALL_RPATH TRUE)
 install(TARGETS insta360_all_node
   DESTINATION lib/${PROJECT_NAME}
 )

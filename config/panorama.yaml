@@ -4,19 +4,49 @@ insta360_node:
     output_width: 1280          # スティッチ出力幅 (SetOutputSize)
     output_height: 640          # スティッチ出力高さ (SetOutputSize、2:1推奨)
     stitch_type: "dynamic"      # "template" | "optflow" | "dynamic"
+    enable_flowstate: false     # false = カメラ本体固定のパノラマ（移動ロボット向け）。
+                                # true にすると水平が安定化される代わりに車体姿勢と画像が対応しなくなる。
+                                # MediaSDK 3.1.1 では false がクラッシュしたが 3.1.5 で修正済み。
+    model_dir: "/opt/MediaSDK-3.1.5-linux/bin/models/"   # 末尾スラッシュ必須
     crop_top: 0                 # 上から切り取るピクセル数
-    crop_bottom: 0              # 下から切り取るピクセル数
-    jpeg_quality: 90            # JPEG品質 1-100
-    publish_fps: 5.0           # panoramaトピックの出力fps
+    crop_bottom: 0            # 下から切り取るピクセル数（車体の写り込みを除去）
+                                # 1280x640 時の 130 を 1920x960 へ比例スケールした値
+    jpeg_quality: 99            # JPEG品質 1-100
+                                # 実測(1920x960/5fps): q99=702KB/frame 3.42MB/s
+                                #                      q90=285KB/frame 1.39MB/s
+                                # 帯域を抑えたいなら 90 で十分（見た目の差はほぼ無い）
+    publish_fps: 5.0            # panoramaトピックの出力fps（時間ベースで間引く）
 
     # --- トピック / フレーム ---
     panorama_topic: "/insta360/panorama/compressed"
     panorama_frame_id: "insta360"
 
-    # --- カメラ入力（raw/IMU/stitch 共通の1ストリーム）---
-    # 3840x1920 | 2560x1280 | 1920x960 | 1440x720（いずれも30fps）
-    live_resolution: "1920x960"
+    publish_raw: true           # dual-fisheye の生ビットストリーム配信
+    raw_topic: "/dual_fisheye/image/compressed"
+    raw_frame_id: "camera_frame"
 
-    # --- タイムスタンプ（撮影時刻でstamp。後段IMU×画像のbag整合用）---
+    publish_imu: true
+    # /imu/data_raw は whill_humble/all.launch.py で Xsens が使用中のため衝突させない
+    imu_topic: "imu/data_raw_insta360"
+    imu_frame_id: "imu_frame"
+    accel_scale: 9.80665        # SDKの加速度[G] -> [m/s^2]
+
+    # --- カメラ入力（raw/IMU/stitch 共通の1ストリーム）---
+    # "auto" にするとカメラへ対応解像度を問い合わせて順に試す。
+    # 明示するなら 3840x1920 | 2560x1280 | 1920x960 | 1440x720（いずれも30fps）。
+    # 対応リストに無い場合も既定候補へフォールバックする。
+    live_resolution: "1920x960"
+    video_bitrate: 524288       # 1024*1024/2
+
+    # --- カメラのオープン再試行 ---
+    # 直前セッション終了直後はカメラが USB 上に再列挙されるまで数秒かかる。
+    # その間に探索すると空リストが返るだけでなく、SDK 内部スレッドで
+    # std::bad_function_call が投げられてプロセスごと落ちることがある。
+    # bri を連続で起動し直すと必ず踏むので、最初に必ず待ってから探索する。
+    open_initial_delay: 2.0     # 最初の探索前の待機[秒]（実測: 2.0 で連続再起動4/4成功）
+    open_retry_count: 15        # 見つからない場合の再試行回数
+    open_retry_delay: 2.0       # 再試行間隔[秒]
+
+    # --- タイムスタンプ（撮影時刻でstamp。後段の bag 整合用）---
     use_sdk_timestamp: true     # false で従来の now()（配信時刻）に戻せる
     timestamp_unit: "ms"        # SDKタイムスタンプの単位（実測: 30fps映像で連続差≈33 → ミリ秒）

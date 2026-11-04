@@ -1,3 +1,10 @@
+# 【注意】このファイルは現在どこからも使われていない。
+#   実機の起動経路は bringup.launch.xml 側:
+#     bri -> whill_humble/all.launch.py -> insta360_ros_driver/launch/bringup.launch.xml
+#   こちらは未インストールの `bev` / `create_costmap` と、ハードコードされた
+#   /home/user/.rviz2/all.rviz にも依存しているため、単体では起動できない。
+#   実行ファイル名のタイポ (insta360_all_driver) だけは直してあるが、
+#   使うなら bev / create_costmap の導入と rviz パスの見直しが必要。
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
@@ -62,7 +69,7 @@ def generate_launch_description():
     # Publishes Compressed Images
     insta360_driver_node = Node(
         package='insta360_ros_driver',
-        executable='insta360_ros_driver',
+        executable='insta360_all_node',
         name='insta360_ros_driver',
         output='log'
     )
